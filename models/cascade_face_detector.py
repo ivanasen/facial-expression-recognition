@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from src.models.face_detector import FaceDetector
+from models.face_detector import FaceDetector
 
 
 class CascadeFaceDetector(FaceDetector):
@@ -13,6 +13,6 @@ class CascadeFaceDetector(FaceDetector):
         self.scale_factor = scale_factor
         self.min_neighbours = min_neighbours
 
-    def detect_faces(self, image: np.ndarray) -> np.ndarray:
+    def detect(self, image: np.ndarray) -> np.ndarray:
         faces = self.classifier.detectMultiScale(image, self.scale_factor, self.min_neighbours)
         return faces
