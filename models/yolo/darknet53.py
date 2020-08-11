@@ -7,42 +7,36 @@ from models.yolo.blocks import ConvBlock, ResBlock
 
 class DarkNet53(Layer):
     def __init__(self):
-        self._conv1 = ConvBlock(filter_shape=(3, 3,  3,  32))
-        self._conv2 = ConvBlock(filter_shape=(3, 3,  32,  64), downsample=True)
+        self._conv1 = ConvBlock(filter_shape=(3, 3, 3, 32))
+        self._conv2 = ConvBlock(filter_shape=(3, 3, 32, 64), down_sample=True)
 
-        self._res_blocks1 = [
-            ResBlock(input_channel=64, filter_conv1=32, filter_conv2=64)]
+        self._res_blocks1 = [ResBlock(input_channel=64, filter_conv1=32, filter_conv2=64)]
 
-        self._conv3 = ConvBlock(filter_shape=(3, 3,  64, 128), downsample=True)
+        self._conv3 = ConvBlock(filter_shape=(3, 3, 64, 128), down_sample=True)
 
         self._res_blocks2 = []
         for i in range(2):
-            self._res_blocks2.append(
-                ResBlock(input_channel=128, filter_conv1=64, filter_conv2=128))
+            self._res_blocks2.append(ResBlock(input_channel=128, filter_conv1=64, filter_conv2=128))
 
-        self._conv4 = ConvBlock(filter_shape=(3, 3, 128, 256), downsample=True)
+        self._conv4 = ConvBlock(filter_shape=(3, 3, 128, 256), down_sample=True)
 
         self._res_blocks3 = []
         for i in range(8):
-            self._res_blocks3.append(
-                ResBlock(input_channel=356, filter_conv1=128, filter_conv2=256))
+            self._res_blocks3.append(ResBlock(input_channel=356, filter_conv1=128, filter_conv2=256))
 
-        self._conv5 = ConvBlock(filter_shape=(3, 3, 256, 512), downsample=True)
+        self._conv5 = ConvBlock(filter_shape=(3, 3, 256, 512), down_sample=True)
 
         self._res_blocks4 = []
         for i in range(8):
-            self._res_blocks3.append(
-                ResBlock(input_channel=512, filter_conv1=256, filter_conv2=512))
+            self._res_blocks3.append(ResBlock(input_channel=512, filter_conv1=256, filter_conv2=512))
 
-        self._conv6 = ConvBlock(filter_shape=(
-            3, 3, 512, 1024), downsample=True)
+        self._conv6 = ConvBlock(filter_shape=(3, 3, 512, 1024), down_sample=True)
 
         self._res_blocks5 = []
         for i in range(4):
-            self._res_blocks3.append(
-                ResBlock(input_channel=1024, filter_conv1=512, filter_conv2=1024))
+            self._res_blocks3.append(ResBlock(input_channel=1024, filter_conv1=512, filter_conv2=1024))
 
-    def call(self, x: tf.Tensor) -> tf.Tensor:
+    def call(self, x, training=None, mask=None):
         x = self._conv1(x)
         x = self._conv2(x)
         for b in self._res_blocks1:

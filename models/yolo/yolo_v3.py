@@ -10,11 +10,11 @@ class YoloV3(Model):
     def __init__(self):
         self._backbone = DarkNet53()
 
-        self._conv1 = ConvBlock(filter_shape=(1, 1, 1024,  512))
-        self._conv2 = ConvBlock(filter_shape=(3, 3,  512, 1024))
-        self._conv3 = ConvBlock(filter_shape=(1, 1, 1024,  512))
-        self._conv4 = ConvBlock(filter_shape=(3, 3,  512, 1024))
-        self._conv5 = ConvBlock(filter_shape=(1, 1, 1024,  512))
+        self._conv1 = ConvBlock(filter_shape=(1, 1, 1024, 512))
+        self._conv2 = ConvBlock(filter_shape=(3, 3, 512, 1024))
+        self._conv3 = ConvBlock(filter_shape=(1, 1, 1024, 512))
+        self._conv4 = ConvBlock(filter_shape=(3, 3, 512, 1024))
+        self._conv5 = ConvBlock(filter_shape=(1, 1, 1024, 512))
 
         self._conv_lobj = ConvBlock(filter_shape=(3, 3, 512, 1024))
         # self._conv_lbbox = ConvBlock(filter_shape=(
@@ -22,7 +22,7 @@ class YoloV3(Model):
         self._conv_lbbox = ConvBlock(filter_shape=(
             1, 1, 1024, 5), activate=False, batch_norm=False)
 
-        self._conv6 = ConvBlock(filter_shape=(1, 1,  512,  256))
+        self._conv6 = ConvBlock(filter_shape=(1, 1, 512, 256))
         self._upsample1 = UpSampling2D()
 
         self._conv7 = ConvBlock(filter_shape=(1, 1, 768, 256))
@@ -49,10 +49,9 @@ class YoloV3(Model):
         self._conv_sobj = ConvBlock(filter_shape=(3, 3, 128, 256))
         # self._sbbox = ConvBlock(filter_shape=(
         #     1, 1, 256, 3*(NUM_CLASS + 5)), activate=False, bn=False)
-        self._conv_sbbox = ConvBlock(filter_shape=(
-            1, 1, 256, 5), activate=False, bn=False)
+        self._conv_sbbox = ConvBlock(filter_shape=(1, 1, 256, 5), activate=False, batch_norm=False)
 
-    def call(self, x: tf.Tensor) -> tf.Tensor:
+    def call(self, x, training=None, mask=None):
         route_1, route_2, x = self._backbone(x)
 
         x = self._conv1(x)
