@@ -55,3 +55,4 @@ jupyter~=1.0.0
 jupyter-client~=6.1.6
 jupyter-console~=6.1.0
 jupyter-core~=4.6.3
+pyyaml~=5.3.1

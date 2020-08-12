@@ -1,63 +1,20 @@
-import tensorflow as tf
-from tensorflow.keras.layers import Layer, ZeroPadding2D, BatchNormalization, Conv2D
-import numpy as np
-
-from models.yolo.blocks import ConvBlock, ResBlock
+from models.yolo.blocks import conv_block, res_block
 
 
-class DarkNet53(Layer):
-    def __init__(self):
-        self._conv1 = ConvBlock(filter_shape=(3, 3, 3, 32))
-        self._conv2 = ConvBlock(filter_shape=(3, 3, 32, 64), down_sample=True)
+def darknet53(inputs):
+    x = conv_block(inputs, filters=32, kernel_size=3)
+    x = _res_block_body(x, 64, 1)
+    x = _res_block_body(x, 128, 2)
+    x = _res_block_body(x, 256, 8)
+    route_1 = x
+    x = _res_block_body(x, 512, 8)
+    route_2 = x
+    x = _res_block_body(x, 1024, 4)
+    return route_1, route_2, x
 
-        self._res_blocks1 = [ResBlock(input_channel=64, filter_conv1=32, filter_conv2=64)]
 
-        self._conv3 = ConvBlock(filter_shape=(3, 3, 64, 128), down_sample=True)
-
-        self._res_blocks2 = []
-        for i in range(2):
-            self._res_blocks2.append(ResBlock(input_channel=128, filter_conv1=64, filter_conv2=128))
-
-        self._conv4 = ConvBlock(filter_shape=(3, 3, 128, 256), down_sample=True)
-
-        self._res_blocks3 = []
-        for i in range(8):
-            self._res_blocks3.append(ResBlock(input_channel=356, filter_conv1=128, filter_conv2=256))
-
-        self._conv5 = ConvBlock(filter_shape=(3, 3, 256, 512), down_sample=True)
-
-        self._res_blocks4 = []
-        for i in range(8):
-            self._res_blocks3.append(ResBlock(input_channel=512, filter_conv1=256, filter_conv2=512))
-
-        self._conv6 = ConvBlock(filter_shape=(3, 3, 512, 1024), down_sample=True)
-
-        self._res_blocks5 = []
-        for i in range(4):
-            self._res_blocks3.append(ResBlock(input_channel=1024, filter_conv1=512, filter_conv2=1024))
-
-    def call(self, x, training=None, mask=None):
-        x = self._conv1(x)
-        x = self._conv2(x)
-        for b in self._res_blocks1:
-            x = b(x)
-        x = self._conv3(x)
-        for b in self._res_blocks2:
-            x = b(x)
-        x = self._conv4(x)
-        for b in self._res_blocks3:
-            x = b(x)
-
-        route_1 = x
-
-        x = self._conv5(x)
-        for b in self._res_blocks4:
-            x = b(x)
-
-        route_2 = x
-
-        x = self._conv6(x)
-        for b in self._res_blocks5:
-            x = b(x)
-
-        return route_1, route_2, x
+def _res_block_body(inputs, filters, res_blocks_count):
+    x = conv_block(inputs, filters=filters, kernel_size=3, down_sample=True)
+    for i in range(res_blocks_count):
+        x = res_block(x, filters // 2, filters)
+    return x
