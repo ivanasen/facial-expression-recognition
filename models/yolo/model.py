@@ -49,34 +49,44 @@ def _conv_bbox(inputs, filters, num_anchors, num_classes):
     return branch, bbox
 
 
-# TODO: Finish feature to bounding box conversion
-def convert_feats_to_bboxes(feats, anchors, num_classes, input_shape, calc_loss=False):
-    num_anchors = len(anchors)
-    anchors_tensor = tf.cast(tf.reshape(anchors, [1, 1, 1, num_anchors, 2]), feats.dtype)
+def decode_yolo_outputs(yolos, anchors, classes_count, image_shape, max_boxes, score_threshold, iou_threshold):
+    boxes, scores = _decode_initial_boxes(yolos, anchors, classes_count, image_shape)
+    boxes, scores, classes = _filter_initial_boxes(
+        boxes, scores, classes_count, max_boxes, score_threshold, iou_threshold)
+    return boxes, scores, classes
 
-    grid_shape = tf.shape(feats)[1:3]  # height, width
 
-    grid_y = tf.tile(tf.reshape(tf.range(0, limit=grid_shape[0]), [-1, 1, 1, 1]), [1, grid_shape[1], 1, 1])
-    grid_x = tf.tile(tf.reshape(tf.range(0, limit=grid_shape[1]), [1, -1, 1, 1]), [grid_shape[0], 1, 1, 1])
-    grid = tf.concat([grid_x, grid_y], axis=-1)
-    grid = tf.cast(grid, feats.dtype)
+def _decode_initial_boxes(yolos, anchors, classes_count, image_shape):
+    yolos_count = len(yolos)
+    anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
 
-    feats = tf.reshape(
-        feats, [-1, grid_shape[0], grid_shape[1], num_anchors, num_classes + 5])
+    input_shape = tf.shape(yolos[0])[1:3] * 32
 
-    # Transform to bounding boxes
-    box_xy = (tf.sigmoid(feats[..., :2]) + grid) / tf.cast(grid_shape[::-1], feats.dtype)
-    box_wh = tf.exp(feats[..., 2:4]) * anchors_tensor / tf.cast(input_shape[::-1], feats.dtype)
-    box_confidence = tf.sigmoid(feats[..., 4:5])
-    box_class_probs = tf.sigmoid(feats[..., 5:])
+    boxes = []
+    box_scores = []
+    for i in range(yolos_count):
+        _boxes, _box_scores = _boxes_and_scores(
+            yolos[i], anchors[anchor_mask[i]], classes_count, input_shape, image_shape)
+        boxes.append(_boxes)
+        box_scores.append(_box_scores)
+    boxes = tf.concat(boxes, axis=0)
+    box_scores = tf.concat(box_scores, axis=0)
 
-    if calc_loss:
-        return grid, feats, box_xy, box_wh
-    return box_xy, box_wh, box_confidence, box_class_probs
+    return boxes, box_scores
+
+
+def _boxes_and_scores(feats, anchors, num_classes, input_shape, image_shape):
+    box_xy, box_wh, box_confidence, box_class_probs = _convert_feats_to_bboxes(
+        feats, anchors, num_classes, input_shape)
+    boxes = _correct_boxes_to_original_image(box_xy, box_wh, input_shape, image_shape)
+    boxes = tf.reshape(boxes, [-1, 4])
+    box_scores = box_confidence * box_class_probs
+    box_scores = tf.reshape(box_scores, [-1, num_classes])
+    return boxes, box_scores
 
 
 # TODO: Fix strange bounding box offset we're getting with the pretrained weights
-def correct_boxes_to_original_image(box_xy, box_wh, input_shape, image_shape):
+def _correct_boxes_to_original_image(box_xy, box_wh, input_shape, image_shape):
     box_yx = box_xy[..., ::-1]
     box_hw = box_wh[..., ::-1]
 
@@ -104,50 +114,51 @@ def correct_boxes_to_original_image(box_xy, box_wh, input_shape, image_shape):
     return boxes
 
 
-def boxes_and_scores(feats, anchors, num_classes, input_shape, image_shape):
-    box_xy, box_wh, box_confidence, box_class_probs = convert_feats_to_bboxes(
-        feats, anchors, num_classes, input_shape)
-    boxes = correct_boxes_to_original_image(box_xy, box_wh, input_shape, image_shape)
-    boxes = tf.reshape(boxes, [-1, 4])
-    box_scores = box_confidence * box_class_probs
-    box_scores = tf.reshape(box_scores, [-1, num_classes])
-    return boxes, box_scores
+def _convert_feats_to_bboxes(feats, anchors, num_classes, input_shape, calc_loss=False):
+    num_anchors = len(anchors)
+    anchors_tensor = tf.cast(tf.reshape(anchors, [1, 1, 1, num_anchors, 2]), feats.dtype)
+
+    grid_shape = tf.shape(feats)[1:3]  # height, width
+
+    grid_y = tf.tile(tf.reshape(tf.range(0, limit=grid_shape[0]), [-1, 1, 1, 1]), [1, grid_shape[1], 1, 1])
+    grid_x = tf.tile(tf.reshape(tf.range(0, limit=grid_shape[1]), [1, -1, 1, 1]), [grid_shape[0], 1, 1, 1])
+    grid = tf.concat([grid_x, grid_y], axis=-1)
+    grid = tf.cast(grid, feats.dtype)
+
+    feats = tf.reshape(
+        feats, [-1, grid_shape[0], grid_shape[1], num_anchors, num_classes + 5])
+
+    # Transform to bounding boxes
+    box_xy = (tf.sigmoid(feats[..., :2]) + grid) / tf.cast(grid_shape[::-1], feats.dtype)
+    box_wh = tf.exp(feats[..., 2:4]) * anchors_tensor / tf.cast(input_shape[::-1], feats.dtype)
+    box_confidence = tf.sigmoid(feats[..., 4:5])
+    box_class_probs = tf.sigmoid(feats[..., 5:])
+
+    if calc_loss:
+        return grid, feats, box_xy, box_wh
+    return box_xy, box_wh, box_confidence, box_class_probs
 
 
-def decode_yolo_outputs(yolos, anchors, classes_count, image_shape, max_boxes, score_threshold, iou_threshold):
-    yolos_count = len(yolos)
-    anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
-
-    input_shape = tf.shape(yolos[0])[1:3] * 32
-
-    boxes = []
-    box_scores = []
-    for i in range(yolos_count):
-        _boxes, _box_scores = boxes_and_scores(
-            yolos[i], anchors[anchor_mask[i]], classes_count, input_shape, image_shape)
-        boxes.append(_boxes)
-        box_scores.append(_box_scores)
-    boxes = tf.concat(boxes, axis=0)
-    box_scores = tf.concat(box_scores, axis=0)
-
-    mask = box_scores >= score_threshold
+def _filter_initial_boxes(boxes, scores, classes_count, max_boxes, score_threshold, iou_threshold):
     max_boxes_tensor = tf.constant(max_boxes, dtype='int32')
-    boxes_ = []
-    scores_ = []
-    classes_ = []
-    for c in range(classes_count):
-        class_boxes = tf.boolean_mask(boxes, mask[:, c])
-        class_box_scores = tf.boolean_mask(box_scores[:, c], mask[:, c])
-        nms_index = tf.image.non_max_suppression(
-            class_boxes, class_box_scores, max_boxes_tensor, iou_threshold=iou_threshold)
-        class_boxes = tf.gather(class_boxes, nms_index)
-        class_box_scores = tf.gather(class_box_scores, nms_index)
-        classes = tf.ones_like(class_box_scores, 'int32') * c
-        boxes_.append(class_boxes)
-        scores_.append(class_box_scores)
-        classes_.append(classes)
-    boxes_ = tf.concat(boxes_, axis=0)
-    scores_ = tf.concat(scores_, axis=0)
-    classes_ = tf.concat(classes_, axis=0)
+    mask = scores >= score_threshold
+    final_boxes = []
+    final_scores = []
+    final_classes = []
 
-    return boxes_, scores_, classes_
+    for i in range(classes_count):
+        class_boxes = tf.boolean_mask(boxes, mask[:, i])
+        class_scores = tf.boolean_mask(scores[:, i], mask[:, i])
+        nms_index = tf.image.non_max_suppression(
+            class_boxes, class_scores, max_boxes_tensor, iou_threshold=iou_threshold)
+        class_boxes = tf.gather(class_boxes, nms_index)
+        class_scores = tf.gather(class_scores, nms_index)
+        classes = tf.ones_like(class_scores, 'int32') * i
+        final_boxes.append(class_boxes)
+        final_scores.append(class_scores)
+        final_classes.append(classes)
+
+    final_boxes = tf.concat(final_boxes, axis=0)
+    final_scores = tf.concat(final_scores, axis=0)
+    final_classes = tf.concat(final_classes, axis=0)
+    return final_boxes, final_scores, final_classes
