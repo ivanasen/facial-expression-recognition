@@ -1,5 +1,6 @@
 from typing import List
 
+import os
 import cv2
 import numpy as np
 
@@ -38,3 +39,19 @@ def convert_ndarray_to_bboxes(
         right = min(image_width, right)
         faces.append(BoundingBox(left, top, abs(right - left), abs(bottom - top), score))
     return faces
+
+
+def get_classes(classes_path: str):
+    classes_path = os.path.expanduser(classes_path)
+    with open(classes_path) as f:
+        class_names = f.readlines()
+    class_names = [c.strip() for c in class_names]
+    return class_names
+
+
+def get_anchors(anchors_path):
+    anchors_path = os.path.expanduser(anchors_path)
+    with open(anchors_path) as f:
+        anchors = f.readline()
+    anchors = [float(x) for x in anchors.split(",")]
+    return np.array(anchors).reshape(-1, 2)

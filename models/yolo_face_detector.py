@@ -9,7 +9,7 @@ from models.bounding_box import BoundingBox
 from models.yolo.model import decode_yolo_outputs, create_yolo_model
 from models.yolo.utils import resize_image_with_borders
 from models.face_detector import FaceDetector
-from models.yolo.utils import convert_ndarray_to_bboxes
+import models.yolo.utils as utils
 
 
 class YoloFaceDetector(FaceDetector):
@@ -22,14 +22,12 @@ class YoloFaceDetector(FaceDetector):
             iou_threshold=0.4,
             model_image_size=608):
         self._model_path = model_path
-        self._anchors_path = anchors_path
-        self._classes_path = classes_path
         self._score_threshold = score_threshold
         self._iou_threshold = iou_threshold
         self._model_image_size = model_image_size
+        self._class_names = utils.get_classes(classes_path)
+        self._anchors = utils.get_anchors(anchors_path)
 
-        self._class_names = self._get_class()
-        self._anchors = self._get_anchors()
         self._init_model()
 
     def detect(self, image: np.ndarray) -> List[BoundingBox]:
@@ -50,22 +48,8 @@ class YoloFaceDetector(FaceDetector):
             score_threshold=self._score_threshold,
             iou_threshold=self._iou_threshold)
         faces_raw = faces_raw.numpy()
-        faces = convert_ndarray_to_bboxes(faces_raw, scores, image_shape[0], image_shape[1])
+        faces = utils.convert_ndarray_to_bboxes(faces_raw, scores, image_shape[0], image_shape[1])
         return faces
-
-    def _get_class(self):
-        classes_path = os.path.expanduser(self._classes_path)
-        with open(classes_path) as f:
-            class_names = f.readlines()
-        class_names = [c.strip() for c in class_names]
-        return class_names
-
-    def _get_anchors(self):
-        anchors_path = os.path.expanduser(self._anchors_path)
-        with open(anchors_path) as f:
-            anchors = f.readline()
-        anchors = [float(x) for x in anchors.split(",")]
-        return np.array(anchors).reshape(-1, 2)
 
     def _init_model(self):
         model_path = os.path.expanduser(self._model_path)
