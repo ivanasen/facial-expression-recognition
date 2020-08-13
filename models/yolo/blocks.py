@@ -1,10 +1,10 @@
 import tensorflow as tf
-from tensorflow.keras.layers import ZeroPadding2D, BatchNormalization, Conv2D
+from tensorflow.keras.layers import ZeroPadding2D, BatchNormalization, Conv2D, Add
 
 
 def conv_block(inputs, filters, kernel_size, down_sample=False, activate=True, batch_norm=True):
     if down_sample:
-        inputs = ZeroPadding2D((1, 0), (0, 1))(inputs)
+        inputs = ZeroPadding2D(((1, 0), (0, 1)))(inputs)
         padding = 'valid'
         strides = 2
     else:
@@ -23,13 +23,18 @@ def conv_block(inputs, filters, kernel_size, down_sample=False, activate=True, b
     if batch_norm:
         x = BatchNormalization()(x)
     if activate:
-        x = tf.nn.leaky_relu(x, alpha=0.1)(x)
+        x = tf.nn.leaky_relu(x, alpha=0.1)
 
     return x
 
 
-def res_block(inputs, filter_conv1, filter_conv2):
-    x = conv_block(inputs, filters=filter_conv1, kernel_size=1)
-    x = conv_block(x, filters=filter_conv2, kernel_size=3)
-    res_out = x + inputs
+def res_block(inputs, filter_conv1, filter_conv2, flag=False):
+    if flag:
+        x = conv_block(inputs, filters=filter_conv1, kernel_size=1)
+        x = conv_block(x, filters=filter_conv2, kernel_size=3)
+    else:
+        x = conv_block(inputs, filters=filter_conv1, kernel_size=1)
+        x = conv_block(x, filters=filter_conv2, kernel_size=3)
+
+    res_out = tf.keras.layers.add([x, inputs])
     return res_out

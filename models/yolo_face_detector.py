@@ -1,13 +1,15 @@
 import os
+from typing import List
 
 import numpy as np
 import tensorflow as tf
-from tensorflow import keras
 from tensorflow.keras.layers import Input
 
+from models.bounding_box import BoundingBox
 from models.yolo.model import decode_yolo_outputs, create_yolo_model
-from models.yolo.utils import letterbox_image
+from models.yolo.utils import resize_image_with_borders
 from models.face_detector import FaceDetector
+from models.yolo.utils import convert_ndarray_to_bboxes
 
 
 class YoloFaceDetector(FaceDetector):
@@ -18,7 +20,7 @@ class YoloFaceDetector(FaceDetector):
             classes_path="data/wider_classes.txt",
             score_threshold=0.3,
             iou_threshold=0.4,
-            model_image_size=(608, 608)):
+            model_image_size=608):
         self._model_path = model_path
         self._anchors_path = anchors_path
         self._classes_path = classes_path
@@ -28,31 +30,28 @@ class YoloFaceDetector(FaceDetector):
 
         self._class_names = self._get_class()
         self._anchors = self._get_anchors()
-        self._boxes, self._scores, self._classes = self._init_model()
+        self._init_model()
 
-    def detect(self, image: np.ndarray) -> np.ndarray:
-        if self._model_image_size != (None, None):
-            boxed_image = letterbox_image(image, tuple(reversed(self._model_image_size)))
-        else:
-            new_image_size = (image.width - (image.width % 32),
-                              image.height - (image.height % 32))
-            boxed_image = letterbox_image(image, new_image_size)
+    def detect(self, image: np.ndarray) -> List[BoundingBox]:
+        image_shape = image.shape[:2]
+        resized_image = resize_image_with_borders(image, self._model_image_size)
 
-        image_data = np.array(boxed_image, dtype="float32")
+        resized_image = tf.cast(resized_image, tf.float32)
+        resized_image /= 255.
+        resized_image = np.expand_dims(resized_image, 0)
 
-        print(image_data.shape)
-        image_data /= 255.
-        image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
-
-        with tf.compat.v1.Session as sess:
-            sess.run([self._boxes, self._scores, self._classes],
-                     feed_dict={
-                         self._yolo_model.input: image_data,
-                         self._input_image_shape: [image.size[1], image.size[0]]
-                     })
-            out_boxes, out_scores, out_classes = self._yolo_model(image_data)
-
-        return out_boxes
+        yolos = self._model.predict(resized_image)
+        faces_raw, scores, _ = decode_yolo_outputs(
+            yolos=yolos,
+            anchors=self._anchors,
+            classes_count=len(self._class_names),
+            image_shape=image_shape,
+            max_boxes=20,
+            score_threshold=self._score_threshold,
+            iou_threshold=self._iou_threshold)
+        faces_raw = faces_raw.numpy()
+        faces = convert_ndarray_to_bboxes(faces_raw, scores, image_shape[0], image_shape[1])
+        return faces
 
     def _get_class(self):
         classes_path = os.path.expanduser(self._classes_path)
@@ -72,28 +71,12 @@ class YoloFaceDetector(FaceDetector):
         model_path = os.path.expanduser(self._model_path)
         assert model_path.endswith(".h5"), "Keras model or weights must be a .h5 file."
 
-        anchors_count = len(self._anchors)
-        classes_count = len(self._class_names)
-
         try:
-            self._yolo_model = create_yolo_model(
+            self._model = create_yolo_model(
                 Input(shape=(None, None, 3)),
-                anchors_count=anchors_count,
-                classes_count=classes_count)
-            self._yolo_model.load_weights(self._model_path)
+                anchors_count=len(self._anchors) // 3,
+                classes_count=len(self._class_names))
+            self._model.load_weights(self._model_path)
         except IOError:
             print(f"Failed loading model weights. Weights file {self._model_path} not found.")
-
         print(f"{model_path} model, anchors, and classes loaded.")
-
-        self._input_image_shape = keras.backend.placeholder(shape=(2,))
-        boxes, scores, classes = decode_yolo_outputs(
-            self._yolo_model.output,
-            self._anchors,
-            len(self._class_names),
-            self._input_image_shape,
-            max_boxes=20,
-            score_threshold=self._score_threshold,
-            iou_threshold=self._iou_threshold)
-
-        return boxes, scores, classes
