@@ -16,7 +16,7 @@ ANCHORS_PATH = "model_config/wider_anchors.txt"
 CLASSES_PATH = "model_config/wider_classes.txt"
 LOG_PATH = "logs/"
 WIDER_DATASET_PATH = "data/"
-FINAL_MODEL_SAVE_PATH = LOG_PATH + "/models/wider_face_yolo.h5"
+FINAL_MODEL_SAVE_PATH = LOG_PATH + "/models/"
 
 # Use x% of the wider dataset for training, validation and testing
 WIDER_DATASET_SIZE = "30%"

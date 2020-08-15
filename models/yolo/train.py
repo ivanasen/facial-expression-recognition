@@ -60,8 +60,10 @@ class YoloFaceDetectionTrainer(object):
             # val_acc_metric.reset_states()
             # print("Validation acc: %.4f" % (float(val_acc),))
             # print("Time taken: %.2fs" % (time.time() - start_time))
-
-        self.model.save_weights(self.model_save_path)
+            if epoch % 5 == 0:
+                self.model.save_weights(
+                    self.model_save_path + f"wider_face_yolo_epoch_{epoch}.h5")
+        model.save_weights(self.model_save_path + f"wider_face_yolo_final.h5")
 
     def _train_step(self, image_batch, target):
         with tf.GradientTape() as tape:

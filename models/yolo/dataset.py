@@ -91,7 +91,7 @@ def get_wider_dataset(data_dir, dataset_size, split="train"):
         face_data = d["faces"]["bbox"]
         np.random.shuffle(face_data)
 
-        image_size = image_data.shape[:2]
+        # image_size = image_data.shape[:2]
         # image_data = utils.resize_image_with_borders(
         #     image=image_data, desired_size=608)
 
