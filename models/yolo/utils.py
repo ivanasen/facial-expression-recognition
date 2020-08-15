@@ -3,11 +3,12 @@ import os
 import cv2
 import numpy as np
 import tensorflow as tf
+import random
 
 from models.bounding_box import BoundingBox
 
 
-def resize_boxes(boxes, old_size, desired_size, max_boxes):
+def resize_boxes(boxes, old_size, desired_size, max_boxes, classes_count):
     h = old_size[0]
     w = old_size[1]
 
@@ -17,14 +18,15 @@ def resize_boxes(boxes, old_size, desired_size, max_boxes):
     delta_x = abs(desired_size - new_size[1]) // 2
 
     boxes = boxes.astype(np.float32)
-    box_data = np.zeros((max_boxes, 5))
-    np.random.shuffle(boxes)
+    box_data = np.zeros((max_boxes, 4 + classes_count))
     if len(boxes) > max_boxes:
         boxes = boxes[:max_boxes]
 
     boxes[:, [0, 2]] = boxes[:, [0, 2]] * h * scale + delta_y
     boxes[:, [1, 3]] = boxes[:, [1, 3]] * w * scale + delta_x
     box_data[:len(boxes), :4] = boxes
+
+    box_data = box_data.astype(np.int32)
 
     return box_data
 
@@ -142,14 +144,14 @@ def box_giou(boxes1, boxes2):
     return giou
 
 
-def postprocess_boxes(pred_bbox, org_img_shape, input_size, score_threshold):
+def postprocess_boxes(pred_box, org_img_shape, input_size, score_threshold):
 
     valid_scale = [0, np.inf]
-    pred_bbox = np.array(pred_bbox)
+    pred_box = np.array(pred_box)
 
-    pred_xywh = pred_bbox[:, 0:4]
-    pred_conf = pred_bbox[:, 4]
-    pred_prob = pred_bbox[:, 5:]
+    pred_xywh = pred_box[:, 0:4]
+    pred_conf = pred_box[:, 4]
+    pred_prob = pred_box[:, 5:]
 
     # # (1) (x, y, w, h) --> (xmin, ymin, xmax, ymax)
     pred_coor = np.concatenate([pred_xywh[:, :2] - pred_xywh[:, 2:] * 0.5,
@@ -172,10 +174,10 @@ def postprocess_boxes(pred_bbox, org_img_shape, input_size, score_threshold):
     pred_coor[invalid_mask] = 0
 
     # # (4) discard some invalid boxes
-    bboxes_scale = np.sqrt(np.multiply.reduce(
+    boxes_scale = np.sqrt(np.multiply.reduce(
         pred_coor[:, 2:4] - pred_coor[:, 0:2], axis=-1))
     scale_mask = np.logical_and(
-        (valid_scale[0] < bboxes_scale), (bboxes_scale < valid_scale[1]))
+        (valid_scale[0] < boxes_scale), (boxes_scale < valid_scale[1]))
 
     # # (5) discard some boxes with low scores
     classes = np.argmax(pred_prob, axis=-1)
@@ -187,26 +189,26 @@ def postprocess_boxes(pred_bbox, org_img_shape, input_size, score_threshold):
     return np.concatenate([coors, scores[:, np.newaxis], classes[:, np.newaxis]], axis=-1)
 
 
-def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
+def nms(boxes, iou_threshold, sigma=0.3, method='nms'):
     """
-    :param bboxes: (xmin, ymin, xmax, ymax, score, class)
+    :param boxes: (xmin, ymin, xmax, ymax, score, class)
     Note: soft-nms, https://arxiv.org/pdf/1704.04503.pdf
           https://github.com/bharatsingh430/soft-nms
     """
-    classes_in_img = list(set(bboxes[:, 5]))
-    best_bboxes = []
+    classes_in_img = list(set(boxes[:, 5]))
+    best_boxes = []
 
     for cls in classes_in_img:
-        cls_mask = (bboxes[:, 5] == cls)
-        cls_bboxes = bboxes[cls_mask]
+        cls_mask = (boxes[:, 5] == cls)
+        cls_boxes = boxes[cls_mask]
 
-        while len(cls_bboxes) > 0:
-            max_ind = np.argmax(cls_bboxes[:, 4])
-            best_bbox = cls_bboxes[max_ind]
-            best_bboxes.append(best_bbox)
-            cls_bboxes = np.concatenate(
-                [cls_bboxes[: max_ind], cls_bboxes[max_ind + 1:]])
-            iou = bboxes_iou(best_bbox[np.newaxis, :4], cls_bboxes[:, :4])
+        while len(cls_boxes) > 0:
+            max_ind = np.argmax(cls_boxes[:, 4])
+            best_box = cls_boxes[max_ind]
+            best_boxes.append(best_box)
+            cls_boxes = np.concatenate(
+                [cls_boxes[: max_ind], cls_boxes[max_ind + 1:]])
+            iou = boxes_iou(best_box[np.newaxis, :4], cls_boxes[:, :4])
             weight = np.ones((len(iou),), dtype=np.float32)
 
             assert method in ['nms', 'soft-nms']
@@ -218,8 +220,81 @@ def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
             if method == 'soft-nms':
                 weight = np.exp(-(1.0 * iou ** 2 / sigma))
 
-            cls_bboxes[:, 4] = cls_bboxes[:, 4] * weight
-            score_mask = cls_bboxes[:, 4] > 0.
-            cls_bboxes = cls_bboxes[score_mask]
+            cls_boxes[:, 4] = cls_boxes[:, 4] * weight
+            score_mask = cls_boxes[:, 4] > 0.
+            cls_boxes = cls_boxes[score_mask]
 
-    return best_bboxes
+    return best_boxes
+
+
+def random_horizontal_flip(image, boxes):
+    if random.random() < 0.5:
+        _, w, _ = image.shape
+        image = image[:, ::-1, :]
+        boxes[:, [0, 2]] = w - boxes[:, [2, 0]]
+
+    return image, boxes
+
+
+def random_crop(image, boxes):
+    if random.random() < 0.5:
+        return image, boxes
+
+    h, w, _ = image.shape
+    max_box = np.concatenate(
+        [np.min(boxes[:, 0:2], axis=0), np.max(boxes[:, 2:4], axis=0)], axis=-1)
+
+    max_l_trans = max_box[0]
+    max_u_trans = max_box[1]
+    max_r_trans = w - max_box[2]
+    max_d_trans = h - max_box[3]
+
+    crop_xmin = max(
+        0, int(max_box[0] - random.uniform(0, max_l_trans)))
+    crop_ymin = max(
+        0, int(max_box[1] - random.uniform(0, max_u_trans)))
+    crop_xmax = max(
+        w, int(max_box[2] + random.uniform(0, max_r_trans)))
+    crop_ymax = max(
+        h, int(max_box[3] + random.uniform(0, max_d_trans)))
+
+    image = image[crop_ymin: crop_ymax, crop_xmin: crop_xmax]
+
+    boxes[:, [0, 2]] = boxes[:, [0, 2]] - crop_xmin
+    boxes[:, [1, 3]] = boxes[:, [1, 3]] - crop_ymin
+
+    return image, boxes
+
+
+def random_translate(image, boxes):
+    if random.random() < 0.5:
+        h, w, _ = image.shape
+        max_box = np.concatenate(
+            [np.min(boxes[:, 0:2], axis=0), np.max(boxes[:, 2:4], axis=0)], axis=-1)
+
+        max_l_trans = max_box[0]
+        max_u_trans = max_box[1]
+        max_r_trans = w - max_box[2]
+        max_d_trans = h - max_box[3]
+
+        tx = random.uniform(-(max_l_trans - 1), (max_r_trans - 1))
+        ty = random.uniform(-(max_u_trans - 1), (max_d_trans - 1))
+
+        M = np.array([[1, 0, tx], [0, 1, ty]])
+        image = cv2.warpAffine(image, M, (w, h))
+
+        boxes[:, [0, 2]] = boxes[:, [0, 2]] + tx
+        boxes[:, [1, 3]] = boxes[:, [1, 3]] + ty
+
+    return image, boxes
+
+
+def augment_data(image, boxes):
+    # image, boxes = random_horizontal_flip(
+    #     np.copy(image), np.copy(boxes))
+    image, boxes = random_crop(np.copy(image), np.copy(boxes))
+    # image, boxes = random_translate(
+    #     np.copy(image), np.copy(boxes))
+    image = image.astype(np.float32) / 255.0
+
+    return image, boxes

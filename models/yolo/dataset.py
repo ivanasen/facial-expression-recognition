@@ -7,6 +7,7 @@ import numpy as np
 
 from models.yolo import utils
 import models.yolo.yolo_config as config
+from models.yolo import utils
 
 
 class WiderDataset(object):
@@ -21,7 +22,7 @@ class WiderDataset(object):
         self.classes_count = classes_count
         self.anchor_per_scale = len(anchors)
         self.batch_size = batch_size
-        self.max_box_per_scale = config.MAX_BOXES_PER_SCALE
+        self.max_boxes_per_scale = config.MAX_BOXES_PER_SCALE
         self.samples_count = len(self.ds_x)
         self.batches_count = int(np.ceil(self.samples_count / self.batch_size))
         self.batch_count = 0
@@ -36,21 +37,38 @@ class WiderDataset(object):
             raise StopIteration
 
         index = self.batch_count * self.batch_size
-        images_batch = np.copy(self.ds_x[index:index + self.batch_size])
-        boxes_batch = np.copy(self.ds_y[index:index + self.batch_size])
+        index_end = min(index + self.batch_size, self.samples_count)
+        images_batch = np.copy(self.ds_x[index:index_end])
+        boxes_batch = np.copy(self.ds_y[index:index_end])
+        batch_size = len(images_batch)
 
+        images_batch_aug = np.zeros(
+            (batch_size, self.input_size, self.input_size, 3), np.float64)
+        boxes_batch_aug = np.zeros(
+            (batch_size, self.max_boxes_per_scale, 4 + self.classes_count), np.int32)
+
+        for i in range(self.batch_size):
+            image, boxes = images_batch[i], boxes_batch[i]
+            image, boxes = utils.augment_data(image, boxes)
+
+            image_size = image.shape[:2]
+            image = utils.resize_image_with_borders(
+                image=image, desired_size=self.input_size)
+            boxes = utils.resize_boxes(
+                boxes, image_size, self.input_size, self.max_boxes_per_scale, self.classes_count)
+            images_batch_aug[i], boxes_batch_aug[i] = image, boxes
+        
         batch_ltarget, batch_mtarget, batch_starget = transform_boxes_for_yolo_batch(
-            boxes_batch,
+            boxes_batch_aug,
             self.input_size,
             self.anchors,
             self.classes_count,
             self.anchor_per_scale,
-            self.max_box_per_scale,
+            self.max_boxes_per_scale,
             self.strides)
 
         self.batch_count += 1
-
-        return images_batch, (batch_ltarget, batch_mtarget, batch_starget)
+        return images_batch_aug, (batch_ltarget, batch_mtarget, batch_starget)
 
     def __len__(self):
         return self.batches_count
@@ -74,10 +92,10 @@ def get_wider_dataset(data_dir, dataset_size, split="train"):
         np.random.shuffle(face_data)
 
         image_size = image_data.shape[:2]
-        image_data = utils.resize_image_with_borders(
-            image=image_data, desired_size=608)
+        # image_data = utils.resize_image_with_borders(
+        #     image=image_data, desired_size=608)
 
-        face_data = utils.resize_boxes(face_data, image_size, 608, 20)
+        # face_data = utils.resize_boxes(face_data, image_size, 608, 20, 1)
         ds_images.append(image_data)
         ds_faces.append(face_data)
 
@@ -129,7 +147,8 @@ def transform_boxes_for_yolo_batch(
     return batch_ltarget, batch_mtarget, batch_starget
 
 
-def transform_boxes_for_yolo(boxes, input_size, anchors, classes_count, anchor_per_scale, max_box_per_scale, strides):
+def transform_boxes_for_yolo(
+        boxes, input_size, anchors, classes_count, anchor_per_scale, max_box_per_scale, strides):
     output_sizes = [input_size // x for x in strides]
 
     label = [np.zeros((output_sizes[i], output_sizes[i], anchor_per_scale,

@@ -2,6 +2,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 from tensorflow.keras.layers import Input, Lambda
 from tensorflow.keras.models import Model
+import numpy as np
 
 from models.yolo import utils
 import tensorflow as tf
