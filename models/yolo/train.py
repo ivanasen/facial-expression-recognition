@@ -6,7 +6,7 @@ from tensorflow.keras.models import Model
 from models.yolo import utils
 import tensorflow as tf
 from models.yolo.dataset import WiderDataset
-from models.yolo.model import create_yolo_model, compute_loss, decode_yolo_outputs_2
+from models.yolo.model import create_yolo_model, compute_loss, decode_yolo_outputs
 
 
 def create_model(input_shape, anchors, classes_count):
@@ -19,7 +19,8 @@ def create_model(input_shape, anchors, classes_count):
 
     output_tensors = []
     for i, yolo in enumerate(yolos):
-        pred_tensor = decode_yolo_outputs_2(yolo, anchors, classes_count, i)
+        pred_boxes, pred_scores, pred_classes = decode_yolo_outputs(yolo, anchors, classes_count, i)
+        pred_tensor = tf.concat([pred_boxes, pred_scores, pred_classes], axis=-1)
         output_tensors.append(yolo)
         output_tensors.append(pred_tensor)
 

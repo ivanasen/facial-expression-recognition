@@ -57,7 +57,7 @@ def _conv_box(inputs, filters, num_anchors, num_classes):
     return branch, box
 
 
-def decode_yolo_outputs_2(conv_output, anchors, classes_count, i=0):
+def decode_yolo_outputs(conv_output, anchors, classes_count, i=0):
     """
     return tensor of shape [batch_size, output_size, output_size, anchor_per_scale, 5 + num_classes]
             contains (x, y, w, h, score, probability)
@@ -91,10 +91,10 @@ def decode_yolo_outputs_2(conv_output, anchors, classes_count, i=0):
     pred_conf = tf.sigmoid(conv_raw_conf)
     pred_prob = tf.sigmoid(conv_raw_prob)
 
-    return tf.concat([pred_xywh, pred_conf, pred_prob], axis=-1)
+    return pred_xywh, pred_conf, pred_prob
 
 
-def decode_yolo_outputs(yolos, anchors, classes_count, image_shape, max_boxes, score_threshold, iou_threshold):
+def decode_and_filter_yolo_outputs(yolos, anchors, classes_count, image_shape, max_boxes, score_threshold, iou_threshold):
     boxes, scores = _decode_initial_boxes(
         yolos, anchors, classes_count, image_shape)
     boxes, scores, classes = _filter_initial_boxes(
@@ -121,13 +121,34 @@ def _decode_initial_boxes(yolos, anchors, classes_count, image_shape):
 
 
 def _boxes_and_scores(feats, anchors, num_classes, input_shape, image_shape):
-    box_xy, box_wh, box_confidence, box_class_probs = _convert_feats_to_boxes(
-        feats, anchors, num_classes, input_shape)
+    num_anchors = len(anchors)
+    anchors_tensor = tf.cast(tf.reshape(
+        anchors, [1, 1, 1, num_anchors, 2]), feats.dtype)
+    grid_shape = tf.shape(feats)[1:3]  # height, width
+    grid_y = tf.tile(tf.reshape(
+        tf.range(0, limit=grid_shape[0]), [-1, 1, 1, 1]), [1, grid_shape[1], 1, 1])
+    grid_x = tf.tile(tf.reshape(tf.range(0, limit=grid_shape[1]), [
+                     1, -1, 1, 1]), [grid_shape[0], 1, 1, 1])
+    grid = tf.concat([grid_x, grid_y], axis=-1)
+    grid = tf.cast(grid, feats.dtype)
+
+    feats = tf.reshape(
+        feats, [-1, grid_shape[0], grid_shape[1], num_anchors, num_classes + 5])
+
+    # Transform to bounding boxes
+    box_xy = (tf.sigmoid(feats[..., :2]) + grid) / \
+        tf.cast(grid_shape[::-1], feats.dtype)
+    box_wh = tf.exp(feats[..., 2:4]) * anchors_tensor / \
+        tf.cast(input_shape[::-1], feats.dtype)
+    box_confidence = tf.sigmoid(feats[..., 4:5])
+    box_class_probs = tf.sigmoid(feats[..., 5:])
+
     boxes = _correct_boxes_to_original_image(
         box_xy, box_wh, input_shape, image_shape)
     boxes = tf.reshape(boxes, [-1, 4])
     box_scores = box_confidence * box_class_probs
     box_scores = tf.reshape(box_scores, [-1, num_classes])
+    
     return boxes, box_scores
 
 
@@ -244,9 +265,8 @@ def compute_loss(pred, conv, label, boxes, i=0):
                         boxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
     max_iou = tf.expand_dims(tf.reduce_max(iou, axis=-1), axis=-1)
 
-    IOU_LOSS_THRESH = 0.5
     respond_bgd = (1.0 - respond_box) * \
-        tf.cast(max_iou < IOU_LOSS_THRESH, tf.float32)
+        tf.cast(max_iou < config.IOU_LOSS_THRESHOLD, tf.float32)
 
     conf_focal = tf.pow(respond_box - pred_conf, 2)
 
