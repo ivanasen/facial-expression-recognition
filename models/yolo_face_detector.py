@@ -4,6 +4,7 @@ from typing import List
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Input
+from tensorflow.keras.models import Model
 
 from models.bounding_box import BoundingBox
 from models.yolo.model import decode_yolo_outputs, create_yolo_model
@@ -32,7 +33,8 @@ class YoloFaceDetector(FaceDetector):
 
     def detect(self, image: np.ndarray) -> List[BoundingBox]:
         image_shape = image.shape[:2]
-        resized_image = resize_image_with_borders(image, self._model_image_size)
+        resized_image = resize_image_with_borders(
+            image, self._model_image_size)
 
         resized_image = tf.cast(resized_image, tf.float32)
         resized_image /= 255.
@@ -48,19 +50,24 @@ class YoloFaceDetector(FaceDetector):
             score_threshold=self._score_threshold,
             iou_threshold=self._iou_threshold)
         faces_raw = faces_raw.numpy()
-        faces = utils.convert_ndarray_to_bboxes(faces_raw, scores, image_shape[0], image_shape[1])
+        faces = utils.convert_ndarray_to_boxes(
+            faces_raw, scores, image_shape[0], image_shape[1])
         return faces
 
     def _init_model(self):
         model_path = os.path.expanduser(self._model_path)
-        assert model_path.endswith(".h5"), "Keras model or weights must be a .h5 file."
+        assert model_path.endswith(
+            ".h5"), "Keras model or weights must be a .h5 file."
 
         try:
-            self._model = create_yolo_model(
-                Input(shape=(None, None, 3)),
-                anchors_count=len(self._anchors) // 3,
+            input_tensor = Input(shape=(None, None, 3))
+            model_outputs = create_yolo_model(
+                input_tensor,
+                anchors_count=len(self._anchors),
                 classes_count=len(self._class_names))
+            self._model = Model(input_tensor, model_outputs)
             self._model.load_weights(self._model_path)
         except IOError:
-            print(f"Failed loading model weights. Weights file {self._model_path} not found.")
+            print(
+                f"Failed loading model weights. Weights file {self._model_path} not found.")
         print(f"{model_path} model, anchors, and classes loaded.")
