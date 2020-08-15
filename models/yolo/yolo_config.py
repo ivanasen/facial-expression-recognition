@@ -11,3 +11,14 @@ TRAIN_LR_END = 1e-6
 SCORE_THRESHOLD = 0.3
 IOU_THRESHOLD = 0.4
 IOU_LOSS_THRESHOLD = 0.5
+
+ANCHORS_PATH = "model_config/wider_anchors.txt"
+CLASSES_PATH = "model_config/wider_classes.txt"
+LOG_PATH = "logs/"
+WIDER_DATASET_PATH = "data/"
+FINAL_MODEL_SAVE_PATH = LOG_PATH + "/models/wider_face_yolo.h5"
+
+# Use 10% of the wider dataset for training, validation and testing
+WIDER_DATASET_SIZE = "10%"
+
+BATCH_SIZE = 4

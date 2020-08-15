@@ -17,9 +17,9 @@ import models.yolo.yolo_config as config
 class YoloFaceDetector(FaceDetector):
     def __init__(
             self,
-            model_path="data/wider_face_yolo.h5",
-            anchors_path="data/wider_anchors.txt",
-            classes_path="data/wider_classes.txt",
+            model_path,
+            anchors_path=config.ANCHORS_PATH,
+            classes_path=config.CLASSES_PATH,
             score_threshold=config.SCORE_THRESHOLD,
             iou_threshold=config.IOU_THRESHOLD,
             model_image_size=config.INPUT_SIZE,
