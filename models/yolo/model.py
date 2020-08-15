@@ -50,10 +50,10 @@ def _conv_block_body(inputs, filters):
 def _conv_box(inputs, filters, num_anchors, num_classes):
     branch = conv_block(inputs, filters=filters, kernel_size=3)
     box = conv_block(branch,
-                      filters=num_anchors * (num_classes + 5),
-                      kernel_size=1,
-                      activate=False,
-                      batch_norm=False)
+                     filters=num_anchors * (num_classes + 5),
+                     kernel_size=1,
+                     activate=False,
+                     batch_norm=False)
     return branch, box
 
 
@@ -141,7 +141,7 @@ def _correct_boxes_to_original_image(box_xy, box_wh, input_shape, image_shape):
 
     new_shape = tf.round(
         image_shape * tf.keras.backend.min(input_shape / image_shape))
-    offset = (input_shape - new_shape) / 2 / input_shape
+    offset = ((input_shape - new_shape) / 2) / input_shape
     scale = input_shape / new_shape
 
     box_yx = (box_yx - offset) * scale
@@ -241,7 +241,7 @@ def compute_loss(pred, conv, label, boxes, i=0):
     giou_loss = respond_box * box_loss_scale * (1 - giou)
 
     iou = utils.box_iou(pred_xywh[:, :, :, :, np.newaxis, :],
-                   boxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
+                        boxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
     max_iou = tf.expand_dims(tf.reduce_max(iou, axis=-1), axis=-1)
 
     IOU_LOSS_THRESH = 0.5
