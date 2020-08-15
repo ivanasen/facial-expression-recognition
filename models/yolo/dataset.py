@@ -32,7 +32,7 @@ class WiderDataset(object):
     def __next__(self):
         if self.batch_count >= self.batches_count:
             self.batch_count = 0
-            utils.shuffle_unison(ds_x, ds_y)
+            utils.shuffle_unison(self.ds_x, self.ds_y)
             raise StopIteration
 
         index = self.batch_count * self.batch_size

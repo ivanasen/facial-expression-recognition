@@ -18,7 +18,8 @@ LOG_PATH = "logs/"
 WIDER_DATASET_PATH = "data/"
 FINAL_MODEL_SAVE_PATH = LOG_PATH + "/models/wider_face_yolo.h5"
 
-# Use 10% of the wider dataset for training, validation and testing
-WIDER_DATASET_SIZE = "10%"
+# Use x% of the wider dataset for training, validation and testing
+WIDER_DATASET_SIZE = "30%"
 
 BATCH_SIZE = 4
+TRAIN_EPOCHS = 10

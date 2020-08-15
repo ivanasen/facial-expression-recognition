@@ -21,13 +21,15 @@ class YoloFaceDetectionTrainer(object):
                  dataset_path=config.WIDER_DATASET_PATH,
                  dataset_size=config.WIDER_DATASET_SIZE,
                  batch_size=config.BATCH_SIZE,
-                 model_save_path=config.FINAL_MODEL_SAVE_PATH):
+                 model_save_path=config.FINAL_MODEL_SAVE_PATH,
+                 train_epochs=config.TRAIN_EPOCHS):
         self.anchors = utils.get_anchors(anchors_path)
         self.classes = utils.get_classes(classes_path)
         self.classes_count = len(self.classes)
         self.input_shape = input_shape
         self.log_path = log_path
         self.model_save_path = model_save_path
+        self.train_epochs = train_epochs
 
         self._load_dataset(dataset_path, dataset_size, batch_size)
         self.model = self._create_model(
@@ -42,9 +44,22 @@ class YoloFaceDetectionTrainer(object):
         self.total_steps = 1 * self.steps_per_epoch
 
     def fit(self):
-        for epoch in range(1):
+        for epoch in range(self.train_epochs):
+            print(f"Start of epoch #{epoch + 1}")
+
             for image_data, target in self.ds_train:
                 self._train_step(image_data, target)
+
+            # Run a validation loop at the end of each epoch.
+            # for x_batch_val, y_batch_val in val_dataset:
+            #     val_logits = model(x_batch_val, training=False)
+            #     # Update val metrics
+            #     val_acc_metric.update_state(y_batch_val, val_logits)
+            # val_acc = val_acc_metric.result()
+            # val_acc_metric.reset_states()
+            # print("Validation acc: %.4f" % (float(val_acc),))
+            # print("Time taken: %.2fs" % (time.time() - start_time))
+
         self.model.save_weights(self.model_save_path)
 
     def _train_step(self, image_batch, target):
