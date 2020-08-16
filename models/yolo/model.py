@@ -87,7 +87,7 @@ def decode_yolo_outputs(conv_output, anchors, classes_count, i=0):
     pred_conf = tf.sigmoid(conv_raw_conf)
     pred_prob = tf.sigmoid(conv_raw_prob)
 
-    return pred_xywh, pred_conf, pred_prob
+    return tf.concat([pred_xywh, pred_conf, pred_prob], axis=-1)
 
 
 def decode_and_filter_yolo_outputs(yolos, anchors, classes_count, image_shape, max_boxes, score_threshold, iou_threshold):
@@ -148,7 +148,6 @@ def _boxes_and_scores(feats, anchors, num_classes, input_shape, image_shape):
     return boxes, box_scores
 
 
-# TODO: Fix strange bounding box offset we're getting with the pretrained weights
 def _correct_boxes_to_original_image(box_xy, box_wh, input_shape, image_shape):
     box_yx = box_xy[..., ::-1]
     box_hw = box_wh[..., ::-1]
@@ -158,9 +157,9 @@ def _correct_boxes_to_original_image(box_xy, box_wh, input_shape, image_shape):
 
     new_shape = tf.round(
         image_shape * tf.keras.backend.min(input_shape / image_shape))
-    offset = ((input_shape - new_shape) / 2) / input_shape
+    offset = ((input_shape - new_shape) / 2.0) / input_shape
     scale = input_shape / new_shape
-
+    offset = tf.add(offset, [0, -0.02])
     box_yx = (box_yx - offset) * scale
     box_hw *= scale
     box_mins = box_yx - (box_hw / 2.)

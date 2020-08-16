@@ -155,10 +155,8 @@ class YoloFaceDetectionTrainer(object):
 
         output_tensors = []
         for i, yolo in enumerate(yolos):
-            pred_boxes, pred_scores, pred_classes = decode_yolo_outputs(
+            pred_tensor = decode_yolo_outputs(
                 yolo, anchors, classes_count, i)
-            pred_tensor = tf.concat(
-                [pred_boxes, pred_scores, pred_classes], axis=-1)
             output_tensors.append(yolo)
             output_tensors.append(pred_tensor)
 

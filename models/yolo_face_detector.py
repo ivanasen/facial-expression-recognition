@@ -73,11 +73,5 @@ class YoloFaceDetector(FaceDetector):
         except IOError:
             print(
                 f"Failed loading model weights. Weights file {self._model_path} not found.")
-        # else:
-            # box_tensors = []
-            # for i, out in enumerate(outputs):
-            #     box_tensor = decode_yolo_outputs(out, i)
-            #     box_tensors.append(box_tensor)
-            # self._model = Model(input_tensor, box_tensors)
-
-        print(f"Model loaded with weights from {self._model_path}.")
+        else:
+            print(f"Model loaded with weights from {self._model_path}.")
