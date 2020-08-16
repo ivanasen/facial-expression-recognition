@@ -250,11 +250,12 @@ def compute_loss(pred, conv, label, boxes, i=0):
     label_prob = label[:, :, :, :, 5:]
 
     # Localization loss (Using GIoU)
-    giou = tf.expand_dims(utils.box_giou(pred_xywh, label_xywh), axis=-1)
+    # giou = tf.expand_dims(utils.box_giou(pred_xywh, label_xywh), axis=-1)
+    giou = tf.expand_dims(utils.box_iou(pred_xywh, label_xywh), axis=-1)
     box_loss_scale = 2.0 - 1.0 * \
         label_xywh[:, :, :, :, 2:3] * \
         label_xywh[:, :, :, :, 3:4] / (input_size ** 2)
-    giou_loss = respond_box * box_loss_scale * (1 - giou)
+    loc_loss = respond_box * box_loss_scale * (1 - giou)
 
     # Confidence loss
     iou = utils.box_iou(pred_xywh[:, :, :, :, np.newaxis, :],
@@ -277,8 +278,8 @@ def compute_loss(pred, conv, label, boxes, i=0):
         tf.nn.sigmoid_cross_entropy_with_logits(
             labels=label_prob, logits=conv_raw_prob)
 
-    giou_loss = tf.reduce_mean(tf.reduce_sum(giou_loss, axis=[1, 2, 3, 4]))
+    loc_loss = tf.reduce_mean(tf.reduce_sum(loc_loss, axis=[1, 2, 3, 4]))
     conf_loss = tf.reduce_mean(tf.reduce_sum(conf_loss, axis=[1, 2, 3, 4]))
     class_loss = tf.reduce_mean(tf.reduce_sum(class_loss, axis=[1, 2, 3, 4]))
 
-    return giou_loss, conf_loss, class_loss
+    return loc_loss, conf_loss, class_loss
