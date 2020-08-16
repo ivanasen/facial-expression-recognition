@@ -58,10 +58,6 @@ def _conv_box(inputs, filters, num_anchors, num_classes):
 
 
 def decode_yolo_outputs(conv_output, anchors, classes_count, i=0):
-    """
-    return tensor of shape [batch_size, output_size, output_size, anchor_per_scale, 5 + num_classes]
-            contains (x, y, w, h, score, probability)
-    """
     conv_shape = tf.shape(conv_output)
     batch_size = conv_shape[0]
     output_size = conv_shape[1]

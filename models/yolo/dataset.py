@@ -33,7 +33,7 @@ class WiderDataset(object):
     def __next__(self):
         if self.batch_count >= self.batches_count:
             self.batch_count = 0
-            utils.shuffle_unison(self.ds_x, self.ds_y)
+            # utils.shuffle_unison(self.ds_x, self.ds_y)
             raise StopIteration
 
         index = self.batch_count * self.batch_size
@@ -47,9 +47,9 @@ class WiderDataset(object):
         boxes_batch_aug = np.zeros(
             (batch_size, self.max_boxes_per_scale, 4 + self.classes_count), np.int32)
 
-        for i in range(self.batch_size):
+        for i in range(batch_size):
             image, boxes = images_batch[i], boxes_batch[i]
-            image, boxes = utils.augment_data(image, boxes)
+            # image, boxes = utils.augment_data(image, boxes)
 
             image_size = image.shape[:2]
             image = utils.resize_image_with_borders(
@@ -89,7 +89,7 @@ def get_wider_dataset(data_dir, dataset_size, split="train"):
     for d in ds_np:
         image_data = d["image"]
         face_data = d["faces"]["bbox"]
-        np.random.shuffle(face_data)
+        # np.random.shuffle(face_data)
 
         # image_size = image_data.shape[:2]
         # image_data = utils.resize_image_with_borders(
@@ -136,9 +136,9 @@ def transform_boxes_for_yolo_batch(
         batch_label_lbox[i, :, :, :, :] = label_lbox
         batch_label_mbox[i, :, :, :, :] = label_mbox
         batch_label_sbox[i, :, :, :, :] = label_sbox
-        batch_sboxes[i, :, :] = lboxes
+        batch_lboxes[i, :, :] = lboxes
         batch_mboxes[i, :, :] = mboxes
-        batch_lboxes[i, :, :] = sboxes
+        batch_sboxes[i, :, :] = sboxes
 
     batch_ltarget = batch_label_lbox, batch_lboxes
     batch_mtarget = batch_label_mbox, batch_mboxes
@@ -161,7 +161,11 @@ def transform_boxes_for_yolo(
         box_coor = box[:4]
         box_class_ind = box[4]
 
-        onehot = np.ones(classes_count, dtype=np.float)
+        onehot = np.zeros(classes_count, dtype=np.float)
+        onehot[box_class_ind] = 1.0
+        uniform_distribution = np.full(classes_count, 1.0 / classes_count)
+        deta = 0.01
+        smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
 
         box_xywh = np.concatenate(
             [(box_coor[2:] + box_coor[:2]) * 0.5, box_coor[2:] - box_coor[:2]], axis=-1)
@@ -188,7 +192,7 @@ def transform_boxes_for_yolo(
                 label[i][yind, xind, iou_mask, :] = 0
                 label[i][yind, xind, iou_mask, 0:4] = box_xywh
                 label[i][yind, xind, iou_mask, 4:5] = 1.0
-                label[i][yind, xind, iou_mask, 5:] = onehot
+                label[i][yind, xind, iou_mask, 5:] = smooth_onehot
 
                 box_ind = int(box_count[i] % max_box_per_scale)
                 boxes_xywh[i][box_ind, :4] = box_xywh
@@ -206,7 +210,7 @@ def transform_boxes_for_yolo(
             label[best_detect][yind, xind, best_anchor, :] = 0
             label[best_detect][yind, xind, best_anchor, 0:4] = box_xywh
             label[best_detect][yind, xind, best_anchor, 4:5] = 1.0
-            label[best_detect][yind, xind, best_anchor, 5:] = onehot
+            label[best_detect][yind, xind, best_anchor, 5:] = smooth_onehot
 
             box_ind = int(box_count[best_detect] %
                           max_box_per_scale)

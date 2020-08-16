@@ -23,7 +23,8 @@ class YoloFaceDetectionTrainer(object):
                  dataset_size=config.WIDER_DATASET_SIZE,
                  batch_size=config.BATCH_SIZE,
                  model_save_path=config.FINAL_MODEL_SAVE_PATH,
-                 train_epochs=config.TRAIN_EPOCHS):
+                 train_epochs=config.TRAIN_EPOCHS,
+                 model_path=None):
         self.anchors = utils.get_anchors(anchors_path)
         self.classes = utils.get_classes(classes_path)
         self.classes_count = len(self.classes)
@@ -31,10 +32,11 @@ class YoloFaceDetectionTrainer(object):
         self.log_path = log_path
         self.model_save_path = model_save_path
         self.train_epochs = train_epochs
+        self.dataset_size = dataset_size
 
         self._load_dataset(dataset_path, dataset_size, batch_size)
         self.model = self._create_model(
-            input_shape, self.anchors, self.classes_count)
+            input_shape, self.anchors, self.classes_count, model_path)
 
         self.optimizer = tf.keras.optimizers.Adam()
         self.writer = tf.summary.create_file_writer(self.log_path)
@@ -44,6 +46,8 @@ class YoloFaceDetectionTrainer(object):
         self.warmup_steps = 2 * self.steps_per_epoch
         self.total_steps = 1 * self.steps_per_epoch
 
+        self._log_info()
+
     def fit(self):
         for epoch in range(self.train_epochs):
             print(f"Start of epoch #{epoch + 1}")
@@ -51,21 +55,50 @@ class YoloFaceDetectionTrainer(object):
             for image_data, target in self.ds_train:
                 self._train_step(image_data, target)
 
-            # Run a validation loop at the end of each epoch.
-            # for x_batch_val, y_batch_val in val_dataset:
-            #     val_logits = model(x_batch_val, training=False)
-            #     # Update val metrics
-            #     val_acc_metric.update_state(y_batch_val, val_logits)
-            # val_acc = val_acc_metric.result()
-            # val_acc_metric.reset_states()
-            # print("Validation acc: %.4f" % (float(val_acc),))
-            # print("Time taken: %.2fs" % (time.time() - start_time))
+            print(f"End of epoch {epoch} so testing on validation data")
+
+            self._validation_step()
+
             if epoch % 5 == 0:
                 self.model.save_weights(
                     self.model_save_path + f"wider_face_yolo_epoch_{epoch}.h5")
         model.save_weights(self.model_save_path + f"wider_face_yolo_final.h5")
 
+    def _log_info(self):
+        print("Dataset info")
+        print("----------------------------------")
+        print("Dataset size: ", self.dataset_size)
+        print("Training size: ", self.ds_train.samples_count)
+        print("Validation size: ", self.ds_val.samples_count)
+        print("Number of train epochs: ", self.train_epochs)
+
+    def _validation_step(self):
+        total_loss = giou_loss = conf_loss = prob_loss = 0
+        for image_batch, target in self.ds_val:
+            pred_result = self.model(image_batch, training=True)
+
+            # optimizing process
+            for i in range(3):
+                conv, pred = pred_result[i*2], pred_result[i*2+1]
+                loss_items = compute_loss(pred, conv, *target[i], i)
+                giou_loss += loss_items[0]
+                conf_loss += loss_items[1]
+                prob_loss += loss_items[2]
+
+            total_loss += giou_loss + conf_loss + prob_loss
+
+        total_loss /= len(self.ds_val)
+        giou_loss /= len(self.ds_val)
+        conf_loss /= len(self.ds_val)
+        prob_loss /= len(self.ds_val)
+
+        print("Validation results:")
+        tf.print("=> giou_loss: %4.2f   conf_loss: %4.2f   prob_loss: %4.2f   total_loss: %4.2f"
+                 % (giou_loss, conf_loss, prob_loss, total_loss))
+        print("-------------------")
+
     def _train_step(self, image_batch, target):
+        im_b = image_batch
         with tf.GradientTape() as tape:
             pred_result = self.model(image_batch, training=True)
             giou_loss = conf_loss = prob_loss = 0
@@ -79,7 +112,6 @@ class YoloFaceDetectionTrainer(object):
                 prob_loss += loss_items[2]
 
             total_loss = giou_loss + conf_loss + prob_loss
-
             gradients = tape.gradient(
                 total_loss, self.model.trainable_variables)
             self.optimizer.apply_gradients(
@@ -113,7 +145,7 @@ class YoloFaceDetectionTrainer(object):
                                   prob_loss, step=self.global_steps)
             self.writer.flush()
 
-    def _create_model(self, input_shape, anchors, classes_count):
+    def _create_model(self, input_shape, anchors, classes_count, model_path=None):
         image_input = Input(shape=(None, None, 3))
         h, w = input_shape
         anchors_count = len(anchors)
@@ -131,6 +163,10 @@ class YoloFaceDetectionTrainer(object):
             output_tensors.append(pred_tensor)
 
         model = tf.keras.Model(image_input, output_tensors)
+
+        if model_path != None:
+            model.load_weights(model_path)
+            print("Model loaded with pretrained weights from ", model_path)
 
         return model
 
