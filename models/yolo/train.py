@@ -2,6 +2,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 from tensorflow.keras.layers import Input, Lambda
 from tensorflow.keras.models import Model
+from tensorflow.keras.experimental import CosineDecay
 import numpy as np
 
 from models.yolo import utils
@@ -38,7 +39,10 @@ class YoloFaceDetectionTrainer(object):
         self.model = self._create_model(
             input_shape, self.anchors, self.classes_count, model_path)
 
+        # self.optimizer = tf.keras.optimizers.Adam(learning_rate=CosineDecay(
+        #     config.INIT_LEARNING_RATE, config.LEARNING_RATE_DECAY_STEPS))
         self.optimizer = tf.keras.optimizers.Adam()
+
         self.writer = tf.summary.create_file_writer(self.log_path)
 
         self.steps_per_epoch = len(self.ds_train)
@@ -73,55 +77,50 @@ class YoloFaceDetectionTrainer(object):
         print("Number of train epochs: ", self.train_epochs)
 
     def _validation_step(self):
-        total_loss = giou_loss = conf_loss = prob_loss = 0
+        loc_loss = conf_loss = prob_loss = 0
         for image_batch, target in self.ds_val:
             pred_result = self.model(image_batch, training=True)
 
-            # optimizing process
             for i in range(3):
                 conv, pred = pred_result[i*2], pred_result[i*2+1]
                 loss_items = compute_loss(pred, conv, *target[i], i)
-                giou_loss += loss_items[0]
+                loc_loss += loss_items[0]
                 conf_loss += loss_items[1]
                 prob_loss += loss_items[2]
 
-            total_loss += giou_loss + conf_loss + prob_loss
-
-        total_loss /= len(self.ds_val)
-        giou_loss /= len(self.ds_val)
+        loc_loss /= len(self.ds_val)
         conf_loss /= len(self.ds_val)
         prob_loss /= len(self.ds_val)
+        total_loss = loc_loss + conf_loss + prob_loss
 
-        print("Validation results:")
-        tf.print("=> giou_loss: %4.2f   conf_loss: %4.2f   prob_loss: %4.2f   total_loss: %4.2f"
-                 % (giou_loss, conf_loss, prob_loss, total_loss))
+        print("Validation loss:")
+        tf.print("loc_loss: %4.2f conf_loss: %4.2f prob_loss: %4.2f total_loss: %4.2f"
+                 % (loc_loss, conf_loss, prob_loss, total_loss))
         print("-------------------")
 
     def _train_step(self, image_batch, target):
         im_b = image_batch
         with tf.GradientTape() as tape:
             pred_result = self.model(image_batch, training=True)
-            giou_loss = conf_loss = prob_loss = 0
 
-            # optimizing process
+            loc_loss = conf_loss = prob_loss = 0
             for i in range(3):
                 conv, pred = pred_result[i*2], pred_result[i*2+1]
-                loss_items = compute_loss(pred, conv, *target[i], i)
-                giou_loss += loss_items[0]
-                conf_loss += loss_items[1]
-                prob_loss += loss_items[2]
+                loss = compute_loss(pred, conv, *target[i], i)
+                loc_loss += loss[0]
+                conf_loss += loss[1]
+                prob_loss += loss[2]
 
-            total_loss = giou_loss + conf_loss + prob_loss
+            total_loss = loc_loss + conf_loss + prob_loss
             gradients = tape.gradient(
                 total_loss, self.model.trainable_variables)
             self.optimizer.apply_gradients(
                 zip(gradients, self.model.trainable_variables))
-            tf.print("=> STEP %4d   lr: %.6f   giou_loss: %4.2f   conf_loss: %4.2f   "
-                     "prob_loss: %4.2f   total_loss: %4.2f" % (self.global_steps, self.optimizer.lr.numpy(),
-                                                               giou_loss, conf_loss,
-                                                               prob_loss, total_loss))
+            tf.print("step %4d lr: %.6f loc_loss: %4.2f conf_loss: %4.2f "
+                     "prob_loss: %4.2f total_loss: %4.2f"
+                     % (self.global_steps, self.optimizer.lr.numpy(), loc_loss, conf_loss, prob_loss, total_loss))
 
-            # update learning rate
+            # Apply Cosine decay
             self.global_steps.assign_add(1)
             if self.global_steps < self.warmup_steps:
                 lr = self.global_steps / self.warmup_steps * config.TRAIN_LR_INIT
@@ -131,14 +130,13 @@ class YoloFaceDetectionTrainer(object):
                                 (self.total_steps - self.warmup_steps) * np.pi)))
             self.optimizer.lr.assign(lr.numpy())
 
-            # writing summary data
             with self.writer.as_default():
                 tf.summary.scalar("lr", self.optimizer.lr,
                                   step=self.global_steps)
                 tf.summary.scalar("loss/total_loss",
                                   total_loss, step=self.global_steps)
-                tf.summary.scalar("loss/giou_loss",
-                                  giou_loss, step=self.global_steps)
+                tf.summary.scalar("loss/loc_loss",
+                                  loc_loss, step=self.global_steps)
                 tf.summary.scalar("loss/conf_loss",
                                   conf_loss, step=self.global_steps)
                 tf.summary.scalar("loss/prob_loss",
@@ -173,37 +171,3 @@ class YoloFaceDetectionTrainer(object):
             ds_path, ds_size, "train", self.classes_count, self.anchors, batch_size)
         self.ds_val = WiderDataset(
             ds_path, ds_size, "validation", self.classes_count, self.anchors, batch_size)
-
-# def train_face_detection(log_dir: str, classes_path: str, anchors_path: str, data_dir: str, dataset_size: str):
-#     anchors = utils.get_anchors(anchors_path)
-#     self.classes = utils.get_classes(classes_path)
-#     classes_count = len(self.classes)
-#     input_shape = (608, 608)
-#     model = create_model(input_shape, anchors, classes_count)
-
-#     # print("Loading data...")
-#     # train_x, train_y, val_x, val_y, test_x, test_y = load_data(
-#     #     data_dir, dataset_size, input_shape, anchors, classes_count)
-#     # print("Data loaded successfully!")
-#     # print(
-#     #     f"Dataset size: {len(train_x)} train, {len(val_x)} val, {len(test_x)} test")
-
-#     # model.compile(optimizer=Adam(), loss=compute_loss(
-#     #     anchors, classes_count=classes_count))
-
-#     # tensorboard = TensorBoard(log_dir=log_dir)
-#     # # checkpoint = ModelCheckpoint(log_dir + "ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5",
-#     # #                              monitor="val_loss", save_weights_only=True, save_best_only=True, save_freq=3)
-#     # reduce_lr = ReduceLROnPlateau(
-#     #     monitor="val_loss", factor=0.1, patience=3, verbose=1)
-#     # early_stopping = EarlyStopping(
-#     #     monitor="val_loss", min_delta=0, patience=10, verbose=1)
-
-#     # batch_size = 4
-
-#     # model.fit(x=train_x,
-#     #           y=train_y,
-#     #           validation_data=(val_x, val_y),
-#     #           epochs=20,
-#     #           callbacks=[tensorboard, reduce_lr, early_stopping])
-#     # model.save_weights(log_dir + "trained_weights_final.h5")
