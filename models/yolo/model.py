@@ -159,7 +159,7 @@ def _correct_boxes_to_original_image(box_xy, box_wh, input_shape, image_shape):
         image_shape * tf.keras.backend.min(input_shape / image_shape))
     offset = ((input_shape - new_shape) / 2.0) / input_shape
     scale = input_shape / new_shape
-    offset = tf.add(offset, [0, -0.02])
+    offset = tf.add(offset, [0, -0.04])
     box_yx = (box_yx - offset) * scale
     box_hw *= scale
     box_mins = box_yx - (box_hw / 2.)
