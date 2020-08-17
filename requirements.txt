@@ -58,3 +58,6 @@ jupyter-core~=4.6.3
 pyyaml~=5.3.1
 pandas~=1.1.0
 scikit-image
+tensorflow-gpu
+pydot
+graphviz
