@@ -1,11 +1,10 @@
+import numpy as np
 
-def get_expression_label(result):
+
+def get_expression_label(predictions):
+    max_index = np.argmax(predictions[0])
+
     emotions = ('angry', 'disgust', 'fear', 'happy', 'sad', 'surprise', 'neutral')
-    m = 0.000000000000000000001
-    a = result[0]
-    for i in range(0, len(a)):
-        if a[i] > m:
-            m = a[i]
-            ind = i
+    predicted_emotion = emotions[max_index]
 
-    return emotions[ind]
+    return predicted_emotion
